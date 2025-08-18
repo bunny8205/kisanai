@@ -1,5 +1,6 @@
 import asyncio
 import speech_recognition as sr
+from difflib import get_close_matches
 from gtts import gTTS
 from googletrans import Translator
 import os
@@ -40,19 +41,27 @@ You can perform the following tasks:
 6. Provide irrigation information for specific crops
 7. Provide fertilizer recommendations for specific crops
 8. Provide peak demand month and price information for specific crops
+9. Provide information about government loans and subsidies for farmers
 
 Always extract and use the following from user queries:
 - Location (district and state)
 - Time period (month/year) if relevant
 - Specific parameters if mentioned (pH, rainfall, moisture, humidity, temperature, etc.)
 - Crop name when asking about irrigation or fertilizers or peak prices
+- Scheme name when asking about loans or subsidies
 
 Important: When user says "this month" or "current month", extract it as "this month".
 When user says "this year" or doesn't specify year, don't include year in response.
 
+For loan/subsidy queries:
+- If user asks about "loan", "subsidy", "scheme", "yojana", "financial help", "credit", "funding",
+  "कर्ज", "सब्सिडी", "योजना", "वित्तीय सहायता", "ऋण", treat it as a subsidy/loan query
+- Extract the state name if mentioned
+- Extract specific scheme name if mentioned
+- If user asks for "all details" or "complete information", show all columns for that state's schemes
+
 If location is not specified, ask for clarification.
 """
-
 class VoiceHandler:
     def __init__(self):
         self.recognizer = sr.Recognizer()
@@ -118,8 +127,28 @@ class AgriculturalAgent:
             self.label_encoder = joblib.load('crop_category_encoder (1).pkl')
             self.model_ph = joblib.load('soil_ph_model (1).pkl')
             self.crop_steps_df = pd.read_csv('crop_steps.csv')
+            # Newly added recommendation models
+            self.irrig_need_model = joblib.load('irrigation_requirement_model.joblib')
+            self.stage_model = joblib.load('stage_prediction_model.joblib')
+            self.irrig_type_model = joblib.load('irrigation_type_model.joblib')
+            self.fert_type_model = joblib.load('fertilizer_type_grouped_model.joblib')
+
+            # Fertilizer dose table
+            self.dose_table = pd.read_parquet('fertilizer_median_dose_table.parquet')
+
+            # Possible stage list for "all stages" predictions
+            self.possible_stages = self.dose_table["stage_grouped"].dropna().unique().tolist()
         except FileNotFoundError as e:
             raise SystemExit(f"Error loading required files: {e}")
+
+        try:
+            # Load subsidy data
+            self.subsidy_df = pd.read_csv('loansubsidy.csv')
+            # Clean state names in the dataframe
+            self.subsidy_df['State'] = self.subsidy_df['State'].str.lower().str.strip()
+        except Exception as e:
+            self.logger.error(f"Error loading subsidy data: {e}")
+            self.subsidy_df = pd.DataFrame()  # Empty dataframe as fallback
 
         # Crop categories to specific crops mapping
         self.crop_categories = {
@@ -191,6 +220,18 @@ class AgriculturalAgent:
             'hyderabad': 'hyderabad',
             'ahmedabad': 'ahmedabad',
         }
+        # In AgriculturalAgent.__init__
+        self.crop_aliases = {
+            "sarson": "mustard",
+            "til": "sesame",
+            "makkai": "maize",
+            "arhar": "pigeon pea",
+            "chana": "chickpea",
+            # add more Hindi → English mappings
+        }
+
+        self.last_discussed_crop = None
+        self.last_discussed_state = None
 
     def translate_to_english(self, text: str, src_lang: str) -> str:
         """Translate text from source language to English"""
@@ -200,10 +241,98 @@ class AgriculturalAgent:
         """Translate text from English to target language"""
         return self.voice_handler.translate_from_english(text, dest_lang)
 
+    def normalize_state_name(self, state: str) -> str:
+        """Normalize state names for consistent matching"""
+        if not state:
+            return state
+
+        state = state.lower().strip()
+
+        # Handle common variations and abbreviations
+        state_mappings = {
+            'tamil nadu': 'tamilnadu',
+            'tamilnadu': 'tamilnadu',
+            'tn': 'tamilnadu',
+            'tamil': 'tamilnadu',
+            'andhra pradesh': 'andhra pradesh',
+            'andhra': 'andhra pradesh',
+            'ap': 'andhra pradesh',
+            'telangana': 'telangana',
+            'telugu': 'telangana',
+            'ts': 'telangana',
+            'karnataka': 'karnataka',
+            'kannada': 'karnataka',
+            'ka': 'karnataka',
+            'maharashtra': 'maharashtra',
+            'mumbai': 'maharashtra',
+            'mh': 'maharashtra',
+            'gujarat': 'gujarat',
+            'gj': 'gujarat',
+            'rajasthan': 'rajasthan',
+            'rj': 'rajasthan',
+            'punjab': 'punjab',
+            'pb': 'punjab',
+            'haryana': 'haryana',
+            'hr': 'haryana',
+            'uttar pradesh': 'uttar pradesh',
+            'up': 'uttar pradesh',
+            'uttarakhand': 'uttarakhand',
+            'uk': 'uttarakhand',
+            'himachal pradesh': 'himachal pradesh',
+            'hp': 'himachal pradesh',
+            'assam': 'assam',
+            'as': 'assam',
+            'kerala': 'kerala',
+            'kl': 'kerala',
+            'odisha': 'odisha',
+            'orissa': 'odisha',
+            'or': 'odisha',
+            'west bengal': 'west bengal',
+            'bengal': 'west bengal',
+            'wb': 'west bengal',
+            'bihar': 'bihar',
+            'br': 'bihar',
+            'jharkhand': 'jharkhand',
+            'jh': 'jharkhand',
+            'chhattisgarh': 'chhattisgarh',
+            'cg': 'chhattisgarh',
+            'madhya pradesh': 'madhya pradesh',
+            'mp': 'madhya pradesh',
+            'goa': 'goa',
+            'ga': 'goa',
+            'sikkim': 'sikkim',
+            'sk': 'sikkim'
+        }
+
+        return state_mappings.get(state, state)
+
+    def _format_scheme_list(self, state_data) -> str:
+        """Format list of schemes for a state"""
+        schemes = state_data['Scheme / Program'].tolist()
+        types = state_data['Type'].tolist()
+
+        response = [f"Here are the available subsidy and loan schemes in {state_data.iloc[0]['State'].title()}:"]
+        for i, (scheme, typ) in enumerate(zip(schemes, types), 1):
+            response.append(f"{i}. {scheme} ({typ})")
+        response.append(
+            "\nYou can ask for details about any specific scheme by name, or say 'show all details' for complete information.")
+        return "\n".join(response)
+
+    def _format_scheme_details(self, scheme_data) -> str:
+        """Format detailed information about a scheme"""
+        details = [
+            f"📌 Scheme Name: {scheme_data['Scheme / Program']}",
+            f"🔹 Type: {scheme_data['Type']}",
+            f"💰 Benefits: {scheme_data['Benefit / Coverage']}",
+            f"📝 Notes: {scheme_data['Notes']}",
+            f"📍 Where to Apply: {scheme_data['Where to Apply']}"
+        ]
+        return "\n".join(details)
+
     def get_peak_price_info(self, crop_name: str) -> str:
         """Get peak price and demand month information for a specific crop"""
         try:
-            crop_name = crop_name.lower().strip()
+            crop_name = self.normalize_crop(crop_name.lower().strip())
 
             # Check if we have this crop in the dataset
             crop_data = self.augmented_df[self.augmented_df['crop'].str.lower() == crop_name]
@@ -241,10 +370,17 @@ class AgriculturalAgent:
             self.logger.error(f"Error getting peak price info for {crop_name}: {e}")
             return f"Sorry, I'm having trouble accessing the peak price details for {crop_name.title()} right now."
 
+    def normalize_crop(self, crop: str) -> str:
+        """Map crop name (including Hindi/vernacular) to canonical dataset name"""
+        if not crop:
+            return crop
+        crop_lower = crop.lower().strip()
+        return self.crop_aliases.get(crop_lower, crop_lower)
+
     def get_irrigation_info(self, crop_name: str) -> str:
         """Get irrigation information in paragraph format"""
         try:
-            crop_name = crop_name.lower().strip()
+            crop_name = self.normalize_crop(crop_name.lower().strip())
             crop_data = self.crop_steps_df[self.crop_steps_df['crop_name'].str.lower() == crop_name]
 
             if crop_data.empty:
@@ -296,7 +432,7 @@ class AgriculturalAgent:
     def get_fertilizer_info(self, crop_name: str) -> str:
         """Get fertilizer information in complete paragraph format"""
         try:
-            crop_name = crop_name.lower().strip()
+            crop_name = self.normalize_crop(crop_name.lower().strip())
             crop_data = self.crop_steps_df[self.crop_steps_df['crop_name'].str.lower() == crop_name]
 
             if crop_data.empty:
@@ -351,7 +487,6 @@ class AgriculturalAgent:
         except Exception as e:
             self.logger.error(f"Error getting fertilizer info for {crop_name}: {e}")
             return f"I'm sorry, I couldn't retrieve the fertilizer details for {crop_name.title()} at this time."
-
     def get_crop_steps(self, crop_name: str) -> str:
         """Get cultivation steps with robust error handling and natural language formatting"""
         try:
@@ -510,6 +645,13 @@ class AgriculturalAgent:
         # First check for irrigation or fertilizer specific queries
         normalized_query = query.lower().strip()
 
+        # Update last discussed crop if mentioned
+        all_crops = set(self.crop_steps_df['crop_name'].str.lower().unique())
+        mentioned_crops = [crop for crop in all_crops if
+                           re.search(r'(^|\W)' + re.escape(crop) + r'(\W|$)', normalized_query)]
+        if mentioned_crops:
+            self.last_discussed_crop = mentioned_crops[0]
+
         # Check for irrigation queries
         irrigation_phrases = [
             'irrigation', 'watering', 'water needs', 'water requirements',
@@ -517,15 +659,27 @@ class AgriculturalAgent:
             'irrigation type', 'irrigation needs'
         ]
 
+        # In process_assistance_request, update the irrigation section:
         if any(phrase in normalized_query for phrase in irrigation_phrases):
             # Find which crop is being asked about
+            target_crop = None
             for crop in suggested_crops:
                 if crop.lower() in normalized_query:
-                    return self.get_irrigation_info(crop)
+                    target_crop = self.normalize_crop(crop)
+                    self.last_discussed_crop = target_crop
+                    break
+
+            # If no specific crop mentioned but we have context, use that
+            if not target_crop and hasattr(self, 'last_discussed_crop') and self.last_discussed_crop in suggested_crops:
+                target_crop = self.normalize_crop(self.last_discussed_crop)
+
+            if target_crop:
+                return self.get_irrigation_info(target_crop)
+
             # If no specific crop mentioned, return info for all suggested crops
             responses = []
             for crop in suggested_crops:
-                responses.append(self.get_irrigation_info(crop))
+                responses.append(self.get_irrigation_info(self.normalize_crop(crop)))
             return "\n\n".join(responses)
 
         # Check for fertilizer queries
@@ -537,9 +691,20 @@ class AgriculturalAgent:
 
         if any(phrase in normalized_query for phrase in fertilizer_phrases):
             # Find which crop is being asked about
+            target_crop = None
             for crop in suggested_crops:
                 if crop.lower() in normalized_query:
-                    return self.get_fertilizer_info(crop)
+                    target_crop = crop
+                    self.last_discussed_crop = target_crop
+                    break
+
+            # If no specific crop mentioned but we have context, use that
+            if not target_crop and hasattr(self, 'last_discussed_crop') and self.last_discussed_crop in suggested_crops:
+                target_crop = self.last_discussed_crop
+
+            if target_crop:
+                return self.get_fertilizer_info(target_crop)
+
             # If no specific crop mentioned, return info for all suggested crops
             responses = []
             for crop in suggested_crops:
@@ -554,9 +719,20 @@ class AgriculturalAgent:
 
         if any(phrase in normalized_query for phrase in peak_price_phrases):
             # Find which crop is being asked about
+            target_crop = None
             for crop in suggested_crops:
                 if crop.lower() in normalized_query:
-                    return self.get_peak_price_info(crop)
+                    target_crop = crop
+                    self.last_discussed_crop = target_crop
+                    break
+
+            # If no specific crop mentioned but we have context, use that
+            if not target_crop and hasattr(self, 'last_discussed_crop') and self.last_discussed_crop in suggested_crops:
+                target_crop = self.last_discussed_crop
+
+            if target_crop:
+                return self.get_peak_price_info(target_crop)
+
             # If no specific crop mentioned, return info for all suggested crops
             responses = []
             for crop in suggested_crops:
@@ -594,6 +770,7 @@ class AgriculturalAgent:
             pattern = r'(^|\W)' + re.escape(crop_lower) + r'(\W|$)'
             if re.search(pattern, normalized_query):
                 mentioned_crops.append(crop)
+                self.last_discussed_crop = crop  # Update context
 
         # If it's a growing query and at least one crop is mentioned
         if is_growing_query and mentioned_crops:
@@ -616,6 +793,7 @@ class AgriculturalAgent:
         # First check if the entire query is a crop name
         if normalized_query in [c.lower() for c in suggested_crops]:
             matched_crops.append(normalized_query)
+            self.last_discussed_crop = normalized_query
         else:
             # Check for partial matches with common prefixes
             common_prefixes = [
@@ -631,12 +809,14 @@ class AgriculturalAgent:
                 # Case 1: Query is exactly the crop name
                 if normalized_query == crop_lower:
                     matched_crops.append(crop_lower)
+                    self.last_discussed_crop = crop_lower
                     continue
 
                 # Case 2: Query starts with common prefix followed by crop name
                 for prefix in common_prefixes:
                     if normalized_query.startswith(prefix) and crop_lower in normalized_query[len(prefix):].strip():
                         matched_crops.append(crop_lower)
+                        self.last_discussed_crop = crop_lower
                         break
 
                 # Case 3: Crop name appears anywhere in the query
@@ -645,6 +825,7 @@ class AgriculturalAgent:
                     pattern = r'(^|\W)' + re.escape(crop_lower) + r'(\W|$)'
                     if re.search(pattern, normalized_query):
                         matched_crops.append(crop_lower)
+                        self.last_discussed_crop = crop_lower
 
         # Remove duplicates while preserving order
         matched_crops = list(dict.fromkeys(matched_crops))
@@ -652,34 +833,6 @@ class AgriculturalAgent:
         if matched_crops:
             return self.get_crop_steps_for_multiple(matched_crops)
 
-        # Check if user just said "yes" or similar but also has follow-up questions
-        if re.search(r'\b(yes|yeah|yup|yep|ok|okay|sure|please)\b', normalized_query):
-            # Check if there's more to the query after the affirmation
-            if len(normalized_query.split()) > 1:
-                # Process the remaining part of the query
-                remaining_query = re.sub(r'\b(yes|yeah|yup|yep|ok|okay|sure|please)\b', '', normalized_query).strip()
-                if remaining_query:
-                    assistance_response = self.process_assistance_request(remaining_query, suggested_crops)
-                    if assistance_response:
-                        return assistance_response
-
-            # If no follow-up or no specific response, return all crop steps
-            return self.get_crop_steps_for_multiple(suggested_crops)
-
-        return None
-
-    def _check_multi_query(self, query: str) -> List[str]:
-        """Check if the query contains multiple questions"""
-        # Common conjunctions that might indicate multiple queries
-        conjunctions = ['and', 'also', 'as well as', 'plus', 'along with']
-
-        # Check if any conjunction exists in the query
-        for conj in conjunctions:
-            if conj in query.lower():
-                # Split the query into parts
-                parts = re.split(fr'\b{conj}\b', query, flags=re.IGNORECASE)
-                if len(parts) > 1:
-                    return [part.strip() for part in parts if part.strip()]
         return None
 
     def _handle_multi_query(self, queries: List[str], suggested_crops: list) -> str:
@@ -741,7 +894,7 @@ class AgriculturalAgent:
         return normalized
 
     def extract_entities(self, query: str) -> Dict[str, Any]:
-        """Improved entity extraction with better location and month handling"""
+        """Improved entity extraction with better location and month handling + keyword override"""
         prompt = f"""
         You are a natural language understanding engine for an agriculture assistant.
 
@@ -749,18 +902,27 @@ class AgriculturalAgent:
         "{query}"
 
         Extract entities as JSON with these keys:
-        - "intent": One of ["soil_ph", "crop_recommendation", "soil_type", "rainfall", "moisture", "humidity", "irrigation", "fertilizer", "peak_price", "unknown"]
+        - "intent": One of ["soil_ph", "crop_recommendation", "soil_type", "rainfall",
+          "moisture", "humidity", "irrigation", "fertilizer", "peak_price", "subsidy_info", "unknown"]
         - "district": Name of the district or city (like "Bombay", "Bangalore") if present
         - "state": Name of the state (like "Maharashtra", "Tamil Nadu") if present
         - "month": Month name (like "January", "Feb", "march", "this month") if mentioned
         - "year": The year if mentioned (use "this year" if user refers to current year)
         - "current_location": true if the user refers to "my location", "my district", or similar
         - "crop": Name of the crop if mentioned (like "wheat", "rice", "sesame")
+        - "scheme": Name of the subsidy/loan scheme if mentioned (like "Agricultural Power Subsidy", "Rajiv Gandhi Kisan Nyay Yojna")
 
-        Important: If user says "this month" or "current month", set month to "this month".
-        If user says "this year" or doesn't specify year, don't include year in response.
+        Important:
+        - If user asks about खाद / उर्वरक / fertilizer, always set intent = "fertilizer".
+        - If user asks about पानी / irrigation / watering, set intent = "irrigation".
+        - If user asks about कीमत / भाव / peak price / demand month, set intent = "peak_price".
+        - If user says "this month" or "current month", set month = "this month".
+        - If user says "this year" or doesn't specify year, don't include year in response.
+        - If user asks about "loan", "subsidy", "scheme", "yojana", "financial help", "credit", "funding", 
+          "कर्ज", "सब्सिडी", "योजना", "वित्तीय सहायता", "ऋण", set intent = "subsidy_info"
+          and also put the mentioned scheme name into "scheme".
 
-        Return only valid JSON. If a location like "Bombay" is used, do not correct it — just return as-is.
+        Return only valid JSON. Do not add explanations.
         """
 
         try:
@@ -782,9 +944,60 @@ class AgriculturalAgent:
             if 'intent' not in entities:
                 entities['intent'] = 'unknown'
 
-            # Check if query refers to "my location" even if not parsed by model
-            if any(phrase in query.lower() for phrase in
-                   ["my location", "my district", "my soil", "my state", "my area"]):
+            # --- Keyword-based overrides (safety net if LLM mislabels) ---
+            normalized_query = query.lower().strip()
+
+            fertilizer_phrases = [
+                'fertilizer', 'fertiliser', 'nutrients', 'plant food',
+                'which fertilizer', 'what fertilizer', 'fertilizer type',
+                'fertilizer dosage', 'how much fertilizer', 'when to fertilize',
+                'खाद', 'उर्वरक', 'खाद डालना', 'उर्वरक डालना',
+                'कौन सा खाद', 'कितना खाद', 'कितना उर्वरक',
+                'खाद इस्तेमाल', 'उर्वरक इस्तेमाल', 'खाद देना', 'उर्वरक देना'
+            ]
+            irrigation_phrases = [
+                'irrigation', 'watering', 'water needs', 'water requirements',
+                'how much water', 'when to water', 'irrigation method',
+                'irrigation type', 'irrigation needs',
+                'सिंचाई', 'पानी देना', 'सिंचाई कब', 'कितना पानी'
+            ]
+            peak_price_phrases = [
+                'peak price', 'highest price', 'best price',
+                'when is price highest', 'peak demand', 'demand month',
+                'कीमत', 'भाव', 'सबसे ज्यादा दाम', 'मांग का महीना'
+            ]
+            subsidy_phrases = [
+                'loan', 'subsidy', 'scheme', 'yojana', 'financial help', 'credit', 'funding',
+                # Hindi
+                'कर्ज', 'सब्सिडी', 'योजना', 'वित्तीय सहायता', 'ऋण',
+                # Tamil
+                'கடன்', 'மானியம்', 'திட்டம்', 'நிதி உதவி',
+                # Telugu
+                'లోన్', 'సబ్సిడీ', 'పథకం', 'ఆర్థిక సహాయం',
+                # Kannada
+                'ಲೋನ್', 'ಸಬ್ಸಿಡಿ', 'ಯೋಜನೆ', 'ಹಣಕಾಸು ಸಹಾಯ',
+                # Malayalam
+                'ലോൺ', 'സബ്സിഡി', 'പദ്ധതി', 'ധനസഹായം',
+                # Bengali
+                'লোন', 'সাবসিডি', 'প্রকল্প', 'আর্থিক সহায়তা',
+                # Punjabi
+                'ਲੋਨ', 'ਸਬਸਿਡੀ', 'ਯੋਜਨਾ', 'ਵਿੱਤੀ ਸਹਾਇਤਾ'
+            ]
+
+            if any(phrase in normalized_query for phrase in subsidy_phrases):
+                entities['intent'] = 'subsidy_info'
+
+            if any(phrase in normalized_query for phrase in fertilizer_phrases):
+                entities['intent'] = 'fertilizer'
+            elif any(phrase in normalized_query for phrase in irrigation_phrases):
+                entities['intent'] = 'irrigation'
+            elif any(phrase in normalized_query for phrase in peak_price_phrases):
+                entities['intent'] = 'peak_price'
+
+            # Check if query refers to "my location"
+            if any(phrase in normalized_query for phrase in
+                   ["my location", "my district", "my soil", "my state", "my area",
+                    "मेरी जगह", "मेरा जिला", "मेरी जमीन", "मेरे क्षेत्र"]):
                 entities['current_location'] = True
 
             # Normalize location names if present
@@ -800,6 +1013,7 @@ class AgriculturalAgent:
                     self.logger.warning(f"Could not normalize month: {entities['month']}")
 
             return entities
+
         except Exception as e:
             self.logger.error(f"Error in entity extraction: {e}")
             return {"intent": "unknown"}
@@ -1056,6 +1270,99 @@ class AgriculturalAgent:
             else:  # Winter
                 return 25.0, 50.0, 60.0
 
+    from difflib import get_close_matches  # make sure at top of file
+
+    def get_subsidy_info(self, state: str = None, scheme_name: str = None, show_all_details: bool = False,
+                         query: str = "") -> str:
+        try:
+            if self.subsidy_df.empty:
+                return "Sorry, subsidy information is currently unavailable. Please try again later."
+
+            # If no scheme name extracted but query text exists → use query for matching
+            if not scheme_name and query:
+                scheme_name = query  # force query into scheme_name slot
+
+            normalized_state = None
+            if state:
+                normalized_state = self.normalize_state_name(state)
+            elif self.last_discussed_state:
+                normalized_state = self.last_discussed_state
+
+            # --- Case 1: User directly asks about a scheme name (query included) ---
+            if scheme_name:
+                search_term = scheme_name.lower().strip()
+                state_data = self.subsidy_df.copy()
+                state_data['clean_scheme'] = state_data['Scheme / Program'].str.lower().str.strip()
+
+                scheme_data = state_data[
+                    state_data['clean_scheme'].str.contains(search_term, case=False, regex=False, na=False)
+                ]
+
+                if scheme_data.empty:
+                    all_schemes = state_data['clean_scheme'].tolist()
+                    close = get_close_matches(search_term, all_schemes, n=1, cutoff=0.5)
+                    if close:
+                        scheme_data = state_data[state_data['clean_scheme'] == close[0]]
+
+                if scheme_data.empty:
+                    return f"I couldn't find a scheme matching '{scheme_name}' in the subsidy database."
+
+                results = [self._format_scheme_details(row) for _, row in scheme_data.iterrows()]
+                return "\n\n".join(results)
+
+            # --- Case 2: User wants all schemes for a state ---
+            if normalized_state:
+                state_data = self.subsidy_df[
+                    self.subsidy_df['State'].str.lower() == normalized_state.lower()
+                    ]
+
+                if state_data.empty:
+                    return f"I couldn't find any subsidy or loan schemes for {normalized_state.title()}."
+
+                self.last_discussed_state = normalized_state  # update context
+
+                if show_all_details:
+                    response = [f"Here are all the subsidy and loan schemes for {normalized_state.title()}:"]
+                    for _, row in state_data.iterrows():
+                        response.append(self._format_scheme_details(row))
+                    return "\n\n".join(response)
+
+                return self._format_scheme_list(state_data)
+
+            # --- Case 3: No state given ---
+            if not normalized_state:
+                all_schemes = self.subsidy_df.copy()
+                all_schemes['clean_scheme'] = all_schemes['Scheme / Program'].str.lower().str.strip()
+
+                # Always try to search query text in the whole CSV
+                if query:
+                    search_term = query.lower().strip()
+                    scheme_data = all_schemes[
+                        all_schemes['clean_scheme'].str.contains(search_term, case=False, regex=False, na=False)
+                    ]
+
+                    # If no exact partial match → fuzzy match
+                    if scheme_data.empty:
+                        all_schemes_list = all_schemes['clean_scheme'].tolist()
+                        close = get_close_matches(search_term, all_schemes_list, n=1, cutoff=0.5)
+                        if close:
+                            scheme_data = all_schemes[all_schemes['clean_scheme'] == close[0]]
+
+                    if not scheme_data.empty:
+                        results = [self._format_scheme_details(row) for _, row in scheme_data.iterrows()]
+                        return "\n\n".join(results)
+
+                # Fallback: show some sample schemes if nothing matches
+                response = ["Here are some available subsidy and loan schemes across India:"]
+                for _, row in all_schemes.head(20).iterrows():
+                    response.append(f"- {row['Scheme / Program']} ({row['Type']}, {row['State'].title()})")
+                response.append("\nYou can refine by asking for a specific scheme.")
+                return "\n".join(response)
+
+        except Exception as e:
+            self.logger.error(f"Error getting subsidy info: {e}")
+            return "Sorry, I encountered an error while retrieving subsidy information. Please try again later."
+
     def get_crop_recommendation(self, state: str, district: str, month: str = None, year: int = None):
         """Get comprehensive crop recommendation with proper month handling"""
         # Get current date information
@@ -1167,12 +1474,47 @@ class AgriculturalAgent:
         # Process as single query
         return self._process_single_query(query)
 
+    def _check_multi_query(self, query: str) -> List[str]:
+        """Check if the query contains multiple questions that should be split"""
+        # Common conjunctions that might indicate multiple queries
+        conjunctions = [' and ', ' also ', ' as well as ', ' plus ', ' along with ']
+
+        # Check if any conjunction exists in the query
+        for conj in conjunctions:
+            if conj in query.lower():
+                # Split the query into parts
+                parts = re.split(conj, query, flags=re.IGNORECASE)
+                if len(parts) > 1:
+                    return [part.strip() for part in parts if part.strip()]
+        return None
+
+    def _handle_multi_query(self, queries: List[str], suggested_crops: list) -> str:
+        """Handle multiple queries in a single request"""
+        responses = []
+        for q in queries:
+            # First check if this is a follow-up about crop cultivation
+            assistance_response = self.process_assistance_request(q, suggested_crops)
+            if assistance_response:
+                responses.append(assistance_response)
+                continue
+
+            # Otherwise process as a regular query
+            response = self.process_query(q)
+            if response:
+                responses.append(response)
+
+        if responses:
+            return "\n\n".join(responses)
+        return None
+
     def _process_single_query(self, query: str) -> str:
-        """Process a single query (not containing multiple questions)"""
+        """Process a single query (not containing multiple questions) with context tracking"""
         normalized_query = query.lower().strip()
 
-        # ✅ Always allow crop growing queries, even without previous recommendation
+        # Get all crops in our database
         all_crops = set(self.crop_steps_df['crop_name'].str.lower().unique())
+
+        # Check if this is a growing query (preserves existing functionality)
         growing_phrases = [
             'how to grow', 'growing', 'planting', 'cultivation',
             'steps for', 'process for', 'guide for', 'tell me about',
@@ -1193,13 +1535,34 @@ class AgriculturalAgent:
         mentioned_crops = [crop for crop in all_crops if
                            re.search(r'(^|\W)' + re.escape(crop) + r'(\W|$)', normalized_query)]
 
+        # If a crop is mentioned in this query, update the last discussed crop
+        if mentioned_crops:
+            self.last_discussed_crop = mentioned_crops[0]  # Track the first mentioned crop
+
         if is_growing_query and mentioned_crops:
             if len(mentioned_crops) == 1:
                 return self.get_crop_steps(mentioned_crops[0])
             else:
                 return self.get_crop_steps_for_multiple(mentioned_crops)
 
-        # ✅ Keep old follow-up assistance behavior
+        # Check if user just said "yes" or similar but also has follow-up questions
+        if re.search(r'\b(yes|yeah|yup|yep|ok|okay|sure|please)\b', normalized_query):
+            # Check if there's more to the query after the affirmation
+            if len(normalized_query.split()) > 1:
+                # Process the remaining part of the query
+                remaining_query = re.sub(r'\b(yes|yeah|yup|yep|ok|okay|sure|please)\b', '', normalized_query).strip()
+                if remaining_query:
+                    assistance_response = self.process_assistance_request(remaining_query,
+                                                                          getattr(self, 'last_suggested_crops', []))
+                    if assistance_response:
+                        return assistance_response
+
+            # If no follow-up or no specific response, return all crop steps
+            if hasattr(self, 'last_suggested_crops'):
+                return self.get_crop_steps_for_multiple(self.last_suggested_crops)
+            return "I'm not sure which crops you're referring to. Could you please specify?"
+
+        # Check for follow-up assistance with last suggested crops
         if hasattr(self, 'last_suggested_crops'):
             assistance_response = self.process_assistance_request(query, self.last_suggested_crops)
             if assistance_response:
@@ -1209,8 +1572,10 @@ class AgriculturalAgent:
         self.logger.info(f"Extracted entities: {entities}")
 
         # Handle irrigation, fertilizer and peak price queries for specific crops
+        # In _process_single_query, find this block:
         if 'crop' in entities and entities['crop']:
-            crop_name = entities['crop'].lower().strip()
+            crop_name = self.normalize_crop(entities['crop'])
+            self.last_discussed_crop = crop_name
 
             if entities['intent'] == 'irrigation':
                 return self.get_irrigation_info(crop_name)
@@ -1219,7 +1584,43 @@ class AgriculturalAgent:
             elif entities['intent'] == 'peak_price':
                 return self.get_peak_price_info(crop_name)
 
-        # Handle location detection
+        # Handle queries where crop isn't specified but we have context
+        irrigation_phrases = [
+            'irrigation', 'watering', 'water needs', 'water requirements',
+            'how much water', 'when to water', 'irrigation method',
+            'irrigation type', 'irrigation needs'
+        ]
+        fertilizer_phrases = [
+            'fertilizer', 'fertiliser', 'nutrients', 'plant food',
+            'which fertilizer', 'what fertilizer', 'fertilizer type',
+            'fertilizer dosage', 'how much fertilizer', 'when to fertilize',
+            # Hindi synonyms
+            'खाद', 'उर्वरक', 'खाद डालना', 'उर्वरक डालना',
+            'कौन सा खाद', 'कितना खाद', 'कितना उर्वरक'
+        ]
+        peak_price_phrases = [
+            'peak price', 'highest price', 'best price',
+            'when is price highest', 'peak demand', 'demand month'
+        ]
+
+        # Check if we should use context for the crop
+        use_context_crop = (
+                (any(phrase in normalized_query for phrase in
+                     irrigation_phrases + fertilizer_phrases + peak_price_phrases)) and
+                (not any(crop in normalized_query for crop in all_crops)) and
+                (hasattr(self, 'last_discussed_crop')) and
+                (self.last_discussed_crop)
+        )
+
+        if use_context_crop:
+            if any(phrase in normalized_query for phrase in irrigation_phrases):
+                return self.get_irrigation_info(self.last_discussed_crop)
+            elif any(phrase in normalized_query for phrase in fertilizer_phrases):
+                return self.get_fertilizer_info(self.last_discussed_crop)
+            elif any(phrase in normalized_query for phrase in peak_price_phrases):
+                return self.get_peak_price_info(self.last_discussed_crop)
+
+        # Handle location detection (existing functionality)
         if entities.get('current_location') or ('district' not in entities and 'state' not in entities):
             try:
                 print("\nAttempting to detect your current location...")
@@ -1229,7 +1630,6 @@ class AgriculturalAgent:
                     detected_district = g.city.lower().strip().replace(" ", "")
                     print(f"Detected location: {detected_district.title()}, {detected_state.title()}")
 
-                    # Only use detected location if we're dealing with "my location" query
                     if "my location" in query.lower() or "my district" in query.lower():
                         entities['district'] = detected_district
                         entities['state'] = detected_state
@@ -1357,6 +1757,80 @@ class AgriculturalAgent:
                 else:
                     return "Please specify which crop you want peak price information for."
 
+
+            # In _process_single_query, update the subsidy_info section:
+
+            elif entities['intent'] == 'subsidy_info':
+
+                try:
+
+                    state = None
+
+                    scheme_name = None
+
+                    show_all = False
+
+                    # Check if state is mentioned in entities
+
+                    if 'state' in entities and entities['state']:
+
+                        state = entities['state']
+
+                    elif self.last_discussed_state:
+
+                        # Fallback to last discussed state
+
+                        state = self.last_discussed_state
+
+                    else:
+
+                        # Try to detect state from query using the loaded subsidy data
+
+                        all_states = set(self.subsidy_df['State'].str.lower())
+
+                        for s in all_states:
+
+                            if re.search(r'\b' + re.escape(s) + r'\b', normalized_query, re.IGNORECASE):
+                                state = s
+
+                                break
+
+                    # ⚠️ Removed: if not state → return "Please specify..."
+
+                    # Instead, pass query to get_subsidy_info
+
+                    # Store state for potential follow-up
+
+                    if state:
+                        self.last_discussed_state = state
+
+                    # Check if user asked about a specific scheme
+
+                    if 'about' in normalized_query:
+                        # Extract text after "about" as potential scheme name
+
+                        scheme_name = normalized_query.split('about')[-1].strip()
+
+                        scheme_name = re.sub(r'[?.,;!]*$', '', scheme_name).strip()
+
+                    # Check if user asked for all details
+
+                    show_all_phrases = ['all details', 'complete information', 'full details']
+
+                    if any(phrase in normalized_query for phrase in show_all_phrases):
+                        show_all = True
+
+                    # 👇 Now always pass query as fallback for scheme search
+
+                    return self.get_subsidy_info(state, scheme_name, show_all, query=normalized_query)
+
+
+                except Exception as e:
+
+                    self.logger.error(f"Error handling subsidy query: {e}")
+
+                    return "Sorry, I had trouble processing your subsidy/loan request. Please try again."
+
             return ("I can help with:\n"
                     "- Soil pH information for your location\n"
                     "- Crop recommendations based on soil and weather conditions\n"
@@ -1371,7 +1845,6 @@ class AgriculturalAgent:
             self.logger.error(f"Query processing error: {e}")
             return ("I encountered an issue processing your request. "
                     "Please try again with a different query or more specific location details.")
-
 
 # Initialize the agent globally
 agent = None
