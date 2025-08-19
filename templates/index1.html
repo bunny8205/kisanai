@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KisanAI - Agricultural Intelligence</title>
+    <style>
+        :root {
+            --primary-color: #10B981;
+            --primary-hover: #059669;
+            --text-color: #374151;
+            --bg-color: #F9FAFB;
+            --container-bg: white;
+            --chat-bg: #FFFFFF;
+            --border-color: #E5E7EB;
+            --user-message-bg: #EFF6FF;
+            --bot-message-bg: #F3F4F6;
+            --examples-bg: #F8F9FA;
+            --examples-hover: #E5E7EB;
+            --crop-title-color: #10B981;
+            --stage-title-color: #059669;
+            --incomplete-data-color: #EF4444;
+            --shadow-color: rgba(0, 0, 0, 0.05);
+            --glass-effect: rgba(255, 255, 255, 0.8);
+            --agent-pulse: #10B981;
+            --agent-status: #3B82F6;
+        }
+
+        [data-theme="dark"] {
+            --primary-color: #10B981;
+            --primary-hover: #059669;
+            --text-color: #E5E7EB;
+            --bg-color: #111827;
+            --container-bg: #1F2937;
+            --chat-bg: #1F2937;
+            --border-color: #374151;
+            --user-message-bg: #1E3A8A;
+            --bot-message-bg: #374151;
+            --examples-bg: #2A2A2A;
+            --examples-hover: #3A3A3A;
+            --crop-title-color: #10B981;
+            --stage-title-color: #059669;
+            --incomplete-data-color: #EF4444;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --glass-effect: rgba(31, 41, 55, 0.8);
+            --agent-pulse: #10B981;
+            --agent-status: #60A5FA;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+            padding-bottom: 100px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: var(--container-bg);
+            box-shadow: 0 0 20px var(--shadow-color);
+            border-radius: 16px;
+            margin-top: 30px;
+            transition: background-color 0.3s, box-shadow 0.3s;
+            position: relative;
+            border: 1px solid var(--border-color);
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 30px;
+            transition: color 0.3s;
+            font-weight: 700;
+            font-size: 2rem;
+            background: linear-gradient(90deg, var(--primary-color), #3B82F6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+
+        .chat-container {
+            height: calc(100vh - 250px);
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            background-color: var(--chat-bg);
+            transition: background-color 0.3s, border-color 0.3s;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 85%;
+            transition: background-color 0.3s;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            position: relative;
+        }
+
+        .user-message {
+            background-color: var(--user-message-bg);
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+            border-top-right-radius: 12px;
+            border-top-left-radius: 12px;
+            border-bottom-left-radius: 12px;
+        }
+
+        .bot-message {
+            background-color: var(--bot-message-bg);
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+            border-top-right-radius: 12px;
+            border-top-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .input-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background-color: var(--glass-effect);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid var(--border-color);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+        }
+
+        .input-wrapper {
+            max-width: 900px;
+            width: 100%;
+            display: flex;
+            gap: 10px;
+            padding: 0 20px;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 16px;
+            background-color: var(--container-bg);
+            color: var(--text-color);
+            transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        #user-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+        }
+
+        button {
+            padding: 12px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s, transform 0.2s;
+            font-weight: 500;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        /* Agent status indicator */
+        .agent-status {
+            position: absolute;
+            top: -8px;
+            left: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            background-color: var(--agent-status);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Agent pulse effect */
+        @keyframes agent-pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        .agent-pulse {
+            position: relative;
+        }
+
+        .agent-pulse::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border-radius: 12px;
+            animation: agent-pulse 2s infinite;
+            pointer-events: none;
+        }
+
+        /* Cursor animation */
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        .typing-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background-color: var(--text-color);
+            vertical-align: middle;
+            margin-left: 2px;
+            animation: blink 1s infinite;
+        }
+
+        /* Agent typing animation */
+        .typing-animation {
+            display: inline-block;
+            width: 60px;
+            height: 20px;
+            position: relative;
+        }
+
+        .typing-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            position: absolute;
+            bottom: 0;
+            transition: background-color 0.3s;
+        }
+
+        .typing-dot:nth-child(1) {
+            left: 0;
+            animation: typing-bounce 1s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            left: 20px;
+            animation: typing-bounce 1s infinite 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            left: 40px;
+            animation: typing-bounce 1s infinite 0.4s;
+        }
+
+        @keyframes typing-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        /* Voice input styles */
+        .voice-input {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .mic-button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--container-bg);
+            border: 1px solid var(--border-color);
+        }
+
+        .mic-button:hover {
+            background-color: var(--border-color);
+        }
+
+        .mic-button svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--primary-color);
+            transition: fill 0.3s;
+        }
+
+        .mic-button.listening svg {
+            fill: var(--incomplete-data-color);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .voice-status {
+            font-size: 14px;
+            color: var(--text-color);
+            opacity: 0.7;
+            margin-left: 5px;
+            transition: color 0.3s;
+        }
+
+        /* Audio player styles */
+        .audio-player {
+            margin-top: 10px;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        /* Speaker icon styles */
+        .speaker-icon {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            margin-left: 10px;
+            fill: var(--primary-color);
+            transition: all 0.2s;
+        }
+
+        .speaker-icon:hover {
+            fill: var(--primary-hover);
+            transform: scale(1.1);
+        }
+
+        .speaker-icon.playing {
+            fill: var(--incomplete-data-color);
+            animation: pulse 1.5s infinite;
+        }
+
+        /* Theme toggle */
+        .theme-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .toggle-label {
+            font-size: 14px;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+
+        /* AI branding elements */
+        .ai-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .ai-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary-color), #3B82F6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+            position: relative;
+        }
+
+        .ai-icon::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: transparent;
+            border: 2px solid rgba(16, 185, 129, 0.4);
+            animation: agent-pulse 2s infinite;
+            pointer-events: none;
+        }
+
+        /* Welcome message styling */
+        .welcome-message {
+            background-color: var(--bot-message-bg);
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            border-bottom-left-radius: 4px;
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .welcome-message::before {
+            content: 'AGENT ACTIVE';
+            position: absolute;
+            top: -8px;
+            left: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            background-color: var(--agent-status);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .welcome-message ul {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+
+        .welcome-message li {
+            margin-bottom: 8px;
+        }
+
+        /* Smooth transitions for all elements */
+        * {
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s, fill 0.3s;
+        }
+
+        /* Scrollbar styling */
+        .chat-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-container::-webkit-scrollbar-track {
+            background: var(--border-color);
+            border-radius: 10px;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 10px;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-hover);
+        }
+
+        /* Crop guide styles (preserved as requested) */
+        .crop-guide {
+            margin-bottom: 20px;
+        }
+        .crop-title {
+            font-weight: bold;
+            color: var(--crop-title-color);
+            margin-bottom: 5px;
+            transition: color 0.3s;
+        }
+        .crop-duration {
+            font-style: italic;
+            margin-bottom: 10px;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+        .crop-stage {
+            margin-bottom: 15px;
+            border-left: 3px solid var(--primary-color);
+            padding-left: 10px;
+            transition: border-color 0.3s;
+        }
+        .stage-title {
+            font-weight: bold;
+            color: var(--stage-title-color);
+            margin-bottom: 5px;
+            transition: color 0.3s;
+        }
+        .stage-intro {
+            margin-bottom: 5px;
+        }
+        .stage-detail {
+            margin-left: 15px;
+            margin-bottom: 3px;
+        }
+        .stage-note {
+            font-style: italic;
+            margin-left: 15px;
+            color: var(--text-color);
+            opacity: 0.7;
+        }
+        .closing-remark {
+            margin-top: 10px;
+            font-style: italic;
+            color: var(--primary-color);
+            transition: color 0.3s;
+        }
+        .incomplete-data {
+            color: var(--incomplete-data-color);
+            font-style: italic;
+            margin-bottom: 10px;
+            transition: color 0.3s;
+        }
+
+        /* Agent thinking state */
+        .agent-thinking {
+            position: relative;
+            padding-left: 30px;
+        }
+
+        .agent-thinking::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            animation: agent-pulse 1.5s infinite;
+        }
+
+        /* Command prompt effect */
+        .command-line {
+            font-family: 'Courier New', monospace;
+            background-color: rgba(0, 0, 0, 0.05);
+            padding: 2px 5px;
+            border-radius: 4px;
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        /* Enhanced bot message */
+        .bot-message-enhanced {
+            position: relative;
+            padding-left: 15px;
+        }
+
+        .bot-message-enhanced::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(to bottom, var(--primary-color), var(--agent-status));
+            border-radius: 3px;
+        }
+
+        /* Agent action indicators */
+        .agent-action {
+            display: inline-block;
+            padding: 2px 6px;
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--primary-color);
+            border-radius: 4px;
+            font-size: 0.8em;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="theme-toggle">
+        <span class="toggle-label">Dark Mode</span>
+        <label class="toggle-switch">
+            <input type="checkbox" id="theme-toggle">
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="container">
+        <div class="ai-header">
+            <div class="ai-icon">AI</div>
+            <h1>KisanAI</h1>
+        </div>
+
+        <div class="chat-container" id="chat-container">
+            <div class="message bot-message welcome-message">
+                <span class="agent-action">INITIALIZING</span> Welcome to KisanAI - Your Agricultural Intelligence Assistant!<br><br>
+                <span class="agent-action">READY</span> I can help you with:
+                <ul>
+                    <li><span class="command-line">Crop recommendations</span> based on your location</li>
+                    <li><span class="command-line">Soil analysis</span> including pH and soil type information</li>
+                    <li><span class="command-line">Weather data</span> including rainfall and humidity</li>
+                    <li><span class="command-line">Cultivation guidance</span> for specific crops</li>
+                </ul>
+                <span class="agent-action">PROMPT</span> How can I assist you with farming today?
+            </div>
+        </div>
+    </div>
+
+    <div class="input-container">
+        <div class="input-wrapper">
+            <div class="input-area">
+                <div class="voice-input">
+                    <input type="text" id="user-input" placeholder="Ask KisanAI anything about agriculture..." autofocus>
+                    <button id="mic-button" class="mic-button" title="Voice Input">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                            <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zm7 9a1 1 0 0 0-2 0 5 5 0 0 1-10 0 1 1 0 0 0-2 0 7 7 0 0 0 6 6.92V20H8a1 1 0 0 0 0 2h8a1 1 0 0 0 0-2h-3v-2.08A7 7 0 0 0 19 11z"/>
+                        </svg>
+                    </button>
+                    <span id="voice-status" class="voice-status"></span>
+                </div>
+                <button id="send-button">Ask</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const micButton = document.getElementById('mic-button');
+        const voiceStatus = document.getElementById('voice-status');
+        const themeToggle = document.getElementById('theme-toggle');
+
+        // Theme toggle functionality
+        themeToggle.addEventListener('change', function() {
+            if (this.checked) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('theme', 'light');
+            }
+        });
+
+        // Check for saved theme preference
+        const currentTheme = localStorage.getItem('theme');
+        if (currentTheme === 'dark') {
+            themeToggle.checked = true;
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+
+        // Update the mediaRecorder initialization
+        let mediaRecorder;
+        let audioChunks = [];
+
+        micButton.addEventListener('click', async function() {
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+
+                    mediaRecorder = new MediaRecorder(stream, {
+                        mimeType: 'audio/webm;codecs=opus',
+                        audioBitsPerSecond: 16000
+                    });
+
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) {
+                            audioChunks.push(e.data);
+                        }
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        voiceStatus.textContent = 'Processing...';
+
+                        try {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+                            const formData = new FormData();
+                            formData.append('audio', audioBlob, 'recording.webm');
+
+                            const response = await fetch('/api/voice', {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            const data = await response.json();
+
+                            if (data.error) {
+                                addMessage(data.error, false);
+                            } else {
+                                addMessage(`<span class="agent-action">USER INPUT</span> You said (${data.language}): ${data.transcript}`, true);
+                                addMessage(data.response, false);
+
+                                if (data.audio_url) {
+                                    const audio = new Audio(data.audio_url);
+                                    audio.play();
+
+                                    // Add audio player to the message
+                                    const audioPlayer = document.createElement('audio');
+                                    audioPlayer.controls = true;
+                                    audioPlayer.src = data.audio_url;
+                                    audioPlayer.className = 'audio-player';
+
+                                    // Find the last bot message and append the audio player
+                                    const botMessages = document.querySelectorAll('.bot-message');
+                                    if (botMessages.length > 0) {
+                                        botMessages[botMessages.length - 1].appendChild(audioPlayer);
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error:', error);
+                            addMessage("<span class='agent-action'>ERROR</span> Error processing voice input", false);
+                        } finally {
+                            voiceStatus.textContent = '';
+                        }
+                    };
+
+                    mediaRecorder.start();
+                    micButton.classList.add('listening');
+                    voiceStatus.textContent = 'Recording...';
+
+                    // Auto-stop after 10 seconds
+                    setTimeout(() => {
+                        if (mediaRecorder && mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                            stream.getTracks().forEach(track => track.stop());
+                            micButton.classList.remove('listening');
+                        }
+                    }, 10000);
+
+                } catch (err) {
+                    console.error('Microphone error:', err);
+                    voiceStatus.textContent = 'Mic access denied';
+                    setTimeout(() => voiceStatus.textContent = '', 3000);
+                }
+            } else {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                micButton.classList.remove('listening');
+            }
+        });
+
+        // Typing speed parameters
+        const typingSpeed = 20; // milliseconds per character
+        const thinkingDelay = 500; // milliseconds before starting to type
+
+        function addMessage(text, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            messageDiv.classList.add(isUser ? 'user-message' : 'bot-message');
+
+            if (!isUser) {
+                messageDiv.classList.add('bot-message-enhanced');
+
+                // Add agent status indicator
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'agent-status';
+                statusDiv.textContent = 'AGENT RESPONSE';
+                messageDiv.appendChild(statusDiv);
+            }
+
+            if (isUser) {
+                // For user messages, just display immediately
+                messageDiv.innerHTML = text;
+                chatContainer.appendChild(messageDiv);
+                scrollToBottom();
+            } else {
+                // For bot messages, create a container for the message and speaker icon
+                const messageContent = document.createElement('div');
+                messageContent.style.display = 'flex';
+                messageContent.style.alignItems = 'center';
+                messageContent.style.justifyContent = 'space-between';
+
+                const textContainer = document.createElement('div');
+                textContainer.style.flex = '1';
+
+                messageContent.appendChild(textContainer);
+                messageDiv.appendChild(messageContent);
+                chatContainer.appendChild(messageDiv);
+                scrollToBottom();
+
+                // Add speaker icon
+                const speakerIcon = document.createElement('div');
+                speakerIcon.innerHTML = `
+                    <svg class="speaker-icon" viewBox="0 0 24 24">
+                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                    </svg>
+                `;
+                speakerIcon.style.marginLeft = '10px';
+                messageContent.appendChild(speakerIcon);
+
+                // Start typing animation immediately
+                const typingAnimation = document.createElement('div');
+                typingAnimation.className = 'typing-animation';
+                typingAnimation.innerHTML = `
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                `;
+                textContainer.appendChild(typingAnimation);
+                scrollToBottom();
+
+                // Function to handle text-to-speech
+                const handleTTS = async () => {
+                    try {
+                        const response = await fetch('/api/voice_query', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ text: fullText }),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('TTS service failed');
+                        }
+
+                        const data = await response.json();
+                        if (data.audio_url) {
+                            const audio = new Audio(data.audio_url);
+                            speakerIcon.querySelector('.speaker-icon').classList.add('playing');
+
+                            audio.onended = () => {
+                                speakerIcon.querySelector('.speaker-icon').classList.remove('playing');
+                            };
+
+                            audio.play();
+                        }
+                    } catch (error) {
+                        console.error('TTS error:', error);
+                    }
+                };
+
+                // Type the message
+                let fullText = '';
+                typeMessage(textContainer, text, typingAnimation, (completedText) => {
+                    fullText = completedText;
+
+                    // Add click handler to speaker icon only after message is fully typed
+                    speakerIcon.querySelector('.speaker-icon').addEventListener('click', handleTTS);
+                });
+            }
+        }
+
+        function scrollToBottom() {
+            // Use requestAnimationFrame for smoother scrolling
+            requestAnimationFrame(() => {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            });
+        }
+
+        function typeMessage(element, fullText, typingAnimation, onComplete) {
+            let i = 0;
+            let lastTime = 0;
+            let animationFrameId = null;
+
+            function typeCharacter(timestamp) {
+                if (!lastTime) lastTime = timestamp;
+                const elapsed = timestamp - lastTime;
+
+                if (elapsed >= typingSpeed) {
+                    if (i < fullText.length) {
+                        // Check if this is a crop guide response
+                        if (fullText.includes("Here's the complete cultivation guide for")) {
+                            // For crop guides, we need to handle HTML content
+                            const partialText = fullText.substring(0, i+1);
+                            element.innerHTML = formatCropGuide(partialText) + typingAnimation.outerHTML;
+                        } else {
+                            // Regular text response
+                            element.innerHTML = fullText.substring(0, i+1) + typingAnimation.outerHTML;
+                        }
+                        i++;
+                        lastTime = timestamp;
+
+                        // Only scroll if we're near the bottom
+                        const isNearBottom = chatContainer.scrollHeight - chatContainer.clientHeight <= chatContainer.scrollTop + 50;
+                        if (isNearBottom) {
+                            scrollToBottom();
+                        }
+                    } else {
+                        // Finished typing
+                        cancelAnimationFrame(animationFrameId);
+
+                        // Remove typing animation
+                        if (typingAnimation && element.contains(typingAnimation)) {
+                            element.removeChild(typingAnimation);
+                        }
+
+                        // Final render
+                        if (fullText.includes("Here's the complete cultivation guide for")) {
+                            element.innerHTML = formatCropGuide(fullText);
+                        } else {
+                            element.innerHTML = fullText;
+                        }
+
+                        // Call the completion callback
+                        if (onComplete) {
+                            onComplete(fullText);
+                        }
+
+                        scrollToBottom();
+                        return;
+                    }
+                }
+
+                animationFrameId = requestAnimationFrame(typeCharacter);
+            }
+
+            animationFrameId = requestAnimationFrame(typeCharacter);
+        }
+
+        function formatCropGuide(text) {
+            // Split the response into individual crop guides
+            const cropGuides = text.split(/(?=Here's the complete cultivation guide for)/);
+
+            let html = '';
+
+            cropGuides.forEach(guide => {
+                if (!guide.trim()) return;
+
+                // Check for incomplete data message
+                if (guide.includes("I have incomplete growth duration data for")) {
+                    const cropName = guide.match(/I have incomplete growth duration data for (.+?)\./)?.[1] || 'this crop';
+                    html += `<div class="incomplete-data"><span class="agent-action">NOTE</span> I have incomplete growth duration data for ${cropName}.</div>`;
+                    return;
+                }
+
+                // Process complete guide
+                const cropNameMatch = guide.match(/Here's the complete cultivation guide for (.+?):/);
+                if (!cropNameMatch) return;
+
+                const cropName = cropNameMatch[1];
+                const durationMatch = guide.match(/This crop typically takes (.+?) from planting to harvest/);
+
+                html += `<div class="crop-guide">`;
+                html += `<div class="crop-title"><span class="agent-action">GUIDE</span> Cultivation Guide for ${cropName}</div>`;
+
+                if (durationMatch) {
+                    html += `<div class="crop-duration">${durationMatch[0]}</div>`;
+                }
+
+                // Extract stages
+                const stages = guide.split(/\*\*(.+?)\*\*/g).slice(1);
+
+                for (let i = 0; i < stages.length; i += 2) {
+                    const stageTitle = stages[i];
+                    const stageContent = stages[i+1];
+
+                    if (!stageTitle || !stageContent) continue;
+
+                    const introMatch = stageContent.match(/(.+?)(?=-|$)/);
+                    const details = stageContent.match(/- (.+?)(?=\n|$)/g) || [];
+
+                    html += `<div class="crop-stage">`;
+                    html += `<div class="stage-title">${stageTitle}</div>`;
+
+                    if (introMatch) {
+                        html += `<div class="stage-intro">${introMatch[1].trim()}</div>`;
+                    }
+
+                    details.forEach(detail => {
+                        const cleanDetail = detail.replace(/^- /, '').trim();
+                        html += `<div class="stage-detail">• ${cleanDetail}</div>`;
+                    });
+
+                    // Check for note
+                    const noteMatch = stageContent.match(/Note: (.+?)(?=\n|$)/);
+                    if (noteMatch) {
+                        html += `<div class="stage-note">Note: ${noteMatch[1]}</div>`;
+                    }
+
+                    html += `</div>`;
+                }
+
+                // Add closing remark if present
+                const closingMatch = guide.match(/(Following these practices should lead to a successful harvest!|With proper care, you'll achieve excellent results!|These guidelines will help you grow healthy crops!)/);
+                if (closingMatch) {
+                    html += `<div class="closing-remark"><span class="agent-action">RECOMMENDATION</span> ${closingMatch[0]}</div>`;
+                }
+
+                html += `</div>`;
+            });
+
+            return html;
+        }
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            addMessage(`<span class="agent-action">USER QUERY</span> ${message}`, true);
+            userInput.value = '';
+
+            // Immediately show typing indicator for bot response
+            const placeholderDiv = document.createElement('div');
+            placeholderDiv.classList.add('message', 'bot-message', 'bot-message-enhanced');
+            chatContainer.appendChild(placeholderDiv);
+
+            // Add agent status indicator
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'agent-status';
+            statusDiv.textContent = 'PROCESSING';
+            placeholderDiv.appendChild(statusDiv);
+
+            const typingAnimation = document.createElement('div');
+            typingAnimation.className = 'typing-animation';
+            typingAnimation.innerHTML = `
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            `;
+            placeholderDiv.appendChild(typingAnimation);
+            scrollToBottom();
+
+            // Use requestAnimationFrame for the thinking delay
+            const startTime = performance.now();
+
+            function thinkingAnimation(timestamp) {
+                const elapsed = timestamp - startTime;
+
+                if (elapsed >= thinkingDelay) {
+                    // Continue with the API call
+                    makeApiCall();
+                } else {
+                    requestAnimationFrame(thinkingAnimation);
+                }
+            }
+
+            function makeApiCall() {
+                fetch('/api/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query: message }),
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Remove the typing indicator
+                    chatContainer.removeChild(placeholderDiv);
+
+                    if (data.error) {
+                        addMessage("<span class='agent-action'>ERROR</span> Sorry, an error occurred: " + data.error, false);
+                    } else {
+                        addMessage(data.response, false);
+
+                        // Auto-play audio response if available
+                        if (data.audio_url) {
+                            const audio = new Audio(data.audio_url);
+                            audio.play();
+
+                            // Add audio player to the message
+                            const audioPlayer = document.createElement('audio');
+                            audioPlayer.controls = true;
+                            audioPlayer.src = data.audio_url;
+                            audioPlayer.className = 'audio-player';
+
+                            // Find the last bot message and append the audio player
+                            const botMessages = document.querySelectorAll('.bot-message');
+                            if (botMessages.length > 0) {
+                                botMessages[botMessages.length - 1].appendChild(audioPlayer);
+                            }
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    // Remove the typing indicator
+                    chatContainer.removeChild(placeholderDiv);
+                    addMessage("<span class='agent-action'>ERROR</span> Sorry, I couldn't process your request. Please try again.", false);
+                });
+            }
+
+            requestAnimationFrame(thinkingAnimation);
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
