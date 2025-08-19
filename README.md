@@ -32,11 +32,14 @@ git clone https://github.com/bunny8205/kisanai.git
 cd kisanai
 
 3. Create a virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate   # Linux/Mac
-venv\Scripts\activate      # Windows
+   
+py -m venv venv
 
-4. Install dependencies
+source venv/bin/activate   # for Linux/Mac
+
+venv\Scripts\activate      # for Windows
+
+5. Install dependencies
 pip install -r requirements.txt
 
 📦 Requirements
