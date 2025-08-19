@@ -75,6 +75,35 @@ kisanai/
 │── fertilizer_type_grouped_model.joblib
 │── fertilizer_median_dose_table.parquet
 
+
+🧩 Installing Ollama
+
+This project uses Ollama to run local LLMs (e.g., Llama 2) for natural language understanding.
+Ollama is a system-level dependency and must be installed separately (not via pip).
+
+1. Install Ollama
+
+Linux / macOS
+
+curl -fsSL https://ollama.com/install.sh | sh
+
+
+Windows
+Download and install from 👉 https://ollama.com/download
+
+2. Start the Ollama Server
+
+Run the Ollama background service:
+
+ollama serve
+
+3. Pull the Required Model
+
+This project uses Llama 2 by default.
+Download it once (approx. 4–7 GB depending on variant):
+
+ollama pull llama2
+
 ▶️ Running the Application
 
 Start the Flask server:
