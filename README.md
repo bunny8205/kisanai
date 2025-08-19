@@ -27,14 +27,16 @@ It integrates speech recognition, translation, machine learning models, and cura
 🛠️ Installation
 1. Clone the repository
 git clone https://github.com/bunny8205/kisanai.git
+
+
 cd kisanai
 
-2. Create a virtual environment (recommended)
+3. Create a virtual environment (recommended)
 python3 -m venv venv
 source venv/bin/activate   # Linux/Mac
 venv\Scripts\activate      # Windows
 
-3. Install dependencies
+4. Install dependencies
 pip install -r requirements.txt
 
 📦 Requirements
