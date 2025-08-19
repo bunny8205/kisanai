@@ -113,23 +113,8 @@ xgboost==3.0.4
 
 📂 Project Structure
 
-Since all datasets and models are in the root directory, your folder should look like this:
+All datasets and models are in the root directory
 
-kisanai/
-│── ai8.py
-│── requirements.txt
-│── README.md
-│── cleaned_dataset.csv
-│── crop_steps.csv
-│── loansubsidy.csv
-│── improved_crop_category_model (1).pkl
-│── crop_category_encoder (1).pkl
-│── soil_ph_model (1).pkl
-│── irrigation_requirement_model.joblib
-│── stage_prediction_model.joblib
-│── irrigation_type_model.joblib
-│── fertilizer_type_grouped_model.joblib
-│── fertilizer_median_dose_table.parquet
 
 
 🧩 Installing Ollama
