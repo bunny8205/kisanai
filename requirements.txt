@@ -1,0 +1,12 @@
+flask
+speechrecognition
+gtts
+googletrans==4.0.0-rc1
+ollama
+numpy
+pandas
+joblib
+requests
+geocoder
+pytz
+pydub
